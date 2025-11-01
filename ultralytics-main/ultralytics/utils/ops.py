@@ -10,6 +10,10 @@ import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
+import torchvision
+import math  # <-- 确保 math 库也被导入
+
+from .metrics import bbox_iou  # <-- 这是您需要添加的关键一行
 
 from ultralytics.utils import LOGGER
 from ultralytics.utils.metrics import batch_probiou
@@ -188,6 +192,62 @@ def nms_rotated(boxes, scores, threshold: float = 0.45, use_triu: bool = True):
         pick = torch.topk(scores, scores.shape[0]).indices
     return sorted_idx[pick]
 
+def diou_nms(boxes, scores, iou_threshold, epsilon=1e-7):
+    """
+    使用 DIoU 逻辑执行 NMS (纯 PyTorch 实现)
+    
+    Args:
+        boxes (torch.Tensor): (N, 4) tensor, 格式为 [x1, y1, x2, y2]
+        scores (torch.Tensor): (N,) tensor, 每个框的分数
+        iou_threshold (float): NMS 阈值
+    
+    Returns:
+        (torch.Tensor): keep (LongTensor), 保留的框的索引
+    """
+    print("--- 正在使用 DIoU-NMS (纯 PyTorch 版) 进行过滤！ ---") # <-- 添加这行
+    
+    # 1. 按分数降序排列
+    order = scores.argsort(descending=True)
+    
+    keep = []
+    while order.numel() > 0:
+        # 2. 保留得分最高的框
+        i = order[0]
+        keep.append(i.item()) # .item() 转换为 python int
+        
+        if order.numel() == 1:
+            break
+            
+        # 3. 获取所有其他框
+        other_boxes = boxes[order[1:]]
+        max_box = boxes[i].unsqueeze(0) # (1, 4)
+        
+        # 4. --- 关键步骤 ---
+        # 调用 metrics.py 中的 bbox_iou 函数, 并开启 DIoU 模式
+        # 注意: 
+        # 1. 我们传入 xywh=False (因为框已经是 x1y1x2y2)
+        # 2. 我们传入 DIoU=True
+        # 3. bbox_iou 返回的 "iou - penalty", 正是 DIoU-NMS 需要的抑制分数
+        
+        # suppression_scores 的形状是 (1, M)
+        suppression_scores = bbox_iou(max_box, other_boxes, xywh=False, DIoU=True, eps=epsilon)
+        suppression_scores = suppression_scores.squeeze(0) # 变为 (M,)
+
+        # 5. 找到那些抑制分数低于阈值的框 (即应该被保留的)
+        # (这些框与 max_box 的 DIoU 足够小, 不被抑制)
+        idx_to_keep = (suppression_scores <= iou_threshold).nonzero(as_tuple=True)[0]
+        
+        if idx_to_keep.numel() == 0:
+            break
+            
+        # 6. 更新 order 列表, 只保留那些未被抑制的框
+        # (注意: idx_to_keep 是相对于 order[1:] 的索引, 所以要 +1)
+        order = order[idx_to_keep + 1]
+
+    # 返回 LongTensor, 和 torchvision.ops.nms 的输出格式保持一致
+    return torch.LongTensor(keep).to(boxes.device)
+
+
 
 def non_max_suppression(
     prediction,
@@ -327,7 +387,8 @@ def non_max_suppression(
             i = nms_rotated(boxes, scores, iou_thres)
         else:
             boxes = x[:, :4] + c  # boxes (offset by class)
-            i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
+            # i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
+            i = diou_nms(boxes, scores, iou_thres)  # DIoU-NMS
         i = i[:max_det]  # limit detections
 
         output[xi], keepi[xi] = x[i], xk[i].reshape(-1)
