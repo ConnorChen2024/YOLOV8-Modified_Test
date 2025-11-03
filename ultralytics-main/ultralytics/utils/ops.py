@@ -247,6 +247,50 @@ def diou_nms(boxes, scores, iou_threshold, epsilon=1e-7):
     # 返回 LongTensor, 和 torchvision.ops.nms 的输出格式保持一致
     return torch.LongTensor(keep).to(boxes.device)
 
+def ciou_nms(boxes, scores, iou_threshold, epsilon=1e-7):
+    """
+    使用 CIoU 逻辑执行 NMS (纯 PyTorch 实现)
+    """
+    
+    # 2. (可选) 修改 print 语句用于调试
+    print("--- 正在使用 CIoU-NMS (纯 PyTorch 版) 进行过滤！ ---") 
+    
+    # 1. 按分数降序排列
+    order = scores.argsort(descending=True)
+    
+    keep = []
+    while order.numel() > 0:
+        # 2. 保留得分最高的框
+        i = order[0]
+        keep.append(i.item()) # .item() 转换为 python int
+        
+        if order.numel() == 1:
+            break
+            
+        # 3. 获取所有其他框
+        other_boxes = boxes[order[1:]]
+        max_box = boxes[i].unsqueeze(0) # (1, 4)
+        
+        # 4. --- 关键步骤 ---
+        # 
+        # 3. (最关键) 把 DIoU=True 改成 CIoU=True
+        # 
+        suppression_scores = bbox_iou(max_box, other_boxes, xywh=False, CIoU=True, eps=epsilon)
+        
+        suppression_scores = suppression_scores.squeeze(0) # 变为 (M,)
+
+        # 5. 找到那些抑制分数低于阈值的框 (即应该被保留的)
+        idx_to_keep = (suppression_scores <= iou_threshold).nonzero(as_tuple=True)[0]
+        
+        if idx_to_keep.numel() == 0:
+            break
+            
+        # 6. 更新 order 列表
+        order = order[idx_to_keep + 1]
+
+    # 返回 LongTensor
+    return torch.LongTensor(keep).to(boxes.device)
+
 
 
 def non_max_suppression(
@@ -388,7 +432,8 @@ def non_max_suppression(
         else:
             boxes = x[:, :4] + c  # boxes (offset by class)
             # i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
-            i = diou_nms(boxes, scores, iou_thres)  # DIoU-NMS
+            # i = diou_nms(boxes, scores, iou_thres)  # DIoU-NMS
+            i = ciou_nms(boxes, scores, iou_thres)  # CIoU-NMS
         i = i[:max_det]  # limit detections
 
         output[xi], keepi[xi] = x[i], xk[i].reshape(-1)
