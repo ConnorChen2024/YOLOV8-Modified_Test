@@ -432,8 +432,8 @@ def non_max_suppression(
         else:
             boxes = x[:, :4] + c  # boxes (offset by class)
             # i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
-            # i = diou_nms(boxes, scores, iou_thres)  # DIoU-NMS
-            i = ciou_nms(boxes, scores, iou_thres)  # CIoU-NMS
+            i = diou_nms(boxes, scores, iou_thres)  # DIoU-NMS
+            # i = ciou_nms(boxes, scores, iou_thres)  # CIoU-NMS
         i = i[:max_det]  # limit detections
 
         output[xi], keepi[xi] = x[i], xk[i].reshape(-1)
