@@ -6,6 +6,7 @@ import re
 import types
 from copy import deepcopy
 from pathlib import Path
+from .Addmodules import *
 
 import torch
 import torch.nn as nn
@@ -1725,11 +1726,9 @@ def parse_model(d, ch, verbose=True):
             c2 = args[0]
             c1 = ch[f]
             args = [*args[1:]]
-        elif m in (CBAM, my_CBAM):
-            c1, c2 = ch[f], args[0]
-            if c2 != nc:
-                c2 = make_divisible(min(c2, max_channels) * width, 8)
-            args = [c1, *args[1:]]
+        elif m in {CBAM}:
+            c2 = ch[f]
+            args = [c2, *args]
         else:
             c2 = ch[f]
 
