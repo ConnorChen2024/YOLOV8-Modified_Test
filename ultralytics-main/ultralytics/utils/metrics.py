@@ -80,6 +80,7 @@ def bbox_iou(
     GIoU: bool = False,
     DIoU: bool = False,
     CIoU: bool = False,
+    IMPDIoU: bool = False,
     eps: float = 1e-7,
 ) -> torch.Tensor:
     """
