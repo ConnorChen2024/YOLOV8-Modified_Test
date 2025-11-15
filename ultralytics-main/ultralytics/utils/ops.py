@@ -291,6 +291,55 @@ def ciou_nms(boxes, scores, iou_threshold, epsilon=1e-7):
     # 返回 LongTensor
     return torch.LongTensor(keep).to(boxes.device)
 
+def impdiou_nms(boxes, scores, iou_thres, IMPDIoU=True):
+    """
+    Performs NMS using the custom IMPDIoU logic (or standard IoU if IMPDIoU=False).
+    This function REPLACES torchvision.ops.nms and CALLS the bbox_iou function.
+    
+    Args:
+      boxes (torch.Tensor): [N, 4] tensor of boxes (xyxy).
+      scores (torch.Tensor): [N] tensor of scores.
+      iou_thres (float): IoU threshold for NMS.
+      IMPDIoU (bool): Flag to use the modified IoU calculation.
+      
+    Returns:
+      torch.Tensor: Indices of boxes to keep.
+    """
+    order = scores.argsort(descending=True)
+    keep = []
+    
+    while order.numel() > 0:
+        if order.numel() == 1:
+            i = order[0]
+            keep.append(i)
+            break
+        
+        # Take highest score box
+        i = order[0]
+        keep.append(i)
+        
+        # Get coordinates of all other boxes
+        other_boxes = boxes[order[1:]]
+        
+        # --- 关键步骤 ---
+        # 调用我们修改过的 bbox_iou 函数, 传入 IMPDIoU 标志
+        # b1 (shape [1, 4]), b2 (shape [M, 4])
+        iou = bbox_iou(boxes[i].unsqueeze(0), other_boxes, IMPDIoU=IMPDIoU) # iou shape is [1, M]
+        # --- 结束关键步骤 ---
+        
+        # Find boxes with IoU <= threshold
+        # .squeeze(0) converts iou shape from [1, M] to [M]
+        inds = (iou.squeeze(0) <= iou_thres).nonzero().squeeze(-1)
+        
+        if inds.numel() == 0:
+            break
+            
+        # Keep only those boxes and update order
+        # inds are indices into `other_boxes`, so we map them back to `order`
+        order = order[inds + 1] # +1 to offset for the 0-th element (i) which we removed
+        
+    return torch.tensor(keep, dtype=torch.long, device=boxes.device)
+
 
 
 def non_max_suppression(
@@ -431,9 +480,10 @@ def non_max_suppression(
             i = nms_rotated(boxes, scores, iou_thres)
         else:
             boxes = x[:, :4] + c  # boxes (offset by class)
-            i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
+            # i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
             # i = diou_nms(boxes, scores, iou_thres)  # DIoU-NMS
             # i = ciou_nms(boxes, scores, iou_thres)  # CIoU-NMS
+            i = impdiou_nms(boxes, scores, iou_thres)  # IMPCIoU-NMS
         i = i[:max_det]  # limit detections
 
         output[xi], keepi[xi] = x[i], xk[i].reshape(-1)
