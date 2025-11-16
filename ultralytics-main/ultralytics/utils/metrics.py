@@ -141,7 +141,7 @@ def bbox_iou(
                 return iou - (rho2 / c2 + v * alpha)  # CIoU
             
             if IMPDIoU:
-                return iou - (rho2 / c2).pow(0.5)  # IMPDIoU (d^2/c^2)^0.5
+                return iou - (rho2 / c2).pow(0.45)  # IMPDIoU (d^2/c^2)^0.45
             
             return iou - rho2 / c2  # DIoU
         c_area = cw * ch + eps  # convex area
